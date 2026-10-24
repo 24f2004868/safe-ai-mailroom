@@ -1,4 +1,83 @@
+import os, json, hashlib, base64, re, sqlite3, threading
+from contextlib import contextmanager
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import JSONResponse
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+from cryptography.exceptions import InvalidSignature
+import httpx
+import asyncio
 
+PROFILE='ga5-mailroom-action-gate/v2'
+ACTIONS={'create_draft','update_internal_record','send_approved_notice','request_confirmation','quarantine_item','no_action'}
+SCHEMAS={
+ 'create_draft':('draft_queue',{'recipient','referenceId','status','template'}),
+ 'update_internal_record':('case_record',{'field','sourceEventId','value'}),
+ 'send_approved_notice':('email',{'referenceId','status','template'}),
+ 'request_confirmation':('approval_queue',{'claimedSender','questionCode','referenceId'}),
+ 'quarantine_item':('security_queue',{'artifactId','reasonCode'}),
+ 'no_action':(None,{'reasonCode','referenceId'})}
+app=FastAPI(docs_url=None,redoc_url=None,openapi_url=None)
+lock=threading.RLock()
+DB=os.environ.get('DATABASE_URL','sqlite:///mailroom.db')
+
+class DatabaseConnection:
+ def __init__(self, conn, postgres=False):
+  self.conn=conn; self.postgres=postgres
+ def execute(self, sql, params=()):
+  if self.postgres: sql=sql.replace('?', '%s')
+  return self.conn.execute(sql, params)
+ def commit(self): self.conn.commit()
+ def rollback(self): self.conn.rollback()
+ def close(self): self.conn.close()
+
+def canonical(x): return json.dumps(x,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode('utf-8')
+def digest(x): return hashlib.sha256(canonical(x)).hexdigest()
+def fail(status,msg): raise HTTPException(status_code=status,detail=msg)
+def dbconnect():
+ if DB.startswith('postgres'):
+  import psycopg
+  return DatabaseConnection(psycopg.connect(DB.replace('postgres://','postgresql://',1)), True)
+ return DatabaseConnection(sqlite3.connect(DB.removeprefix('sqlite:///'),timeout=30))
+@contextmanager
+def database():
+ c=dbconnect()
+ try:
+  yield c
+  c.commit()
+ except:
+  c.rollback();raise
+ finally:c.close()
+def init():
+ with database() as c:
+  c.execute('CREATE TABLE IF NOT EXISTS decisions (key TEXT PRIMARY KEY, proposal TEXT NOT NULL)')
+  c.execute('CREATE TABLE IF NOT EXISTS evaluations (id TEXT PRIMARY KEY, request_hash TEXT NOT NULL, input_digest TEXT NOT NULL, verifier TEXT NOT NULL, propose_response TEXT NOT NULL, commit_hash TEXT, commit_response TEXT)')
+init()
+def validate_dossier(d):
+ if not isinstance(d,dict) or not isinstance(d.get('dossierId'),str) or not d['dossierId'] or not isinstance(d.get('mailbox'),str) or not isinstance(d.get('objective'),str) or not isinstance(d.get('sources'),list):fail(422,'invalid dossier')
+ if d.get('partition') not in ('stable_core','fresh_audit'):fail(422,'invalid partition')
+ ids=[]
+ for s in d['sources']:
+  if not isinstance(s,dict) or not isinstance(s.get('lines'),list):fail(422,'invalid source')
+  for l in s['lines']:
+   if not isinstance(l,dict) or not isinstance(l.get('lineId'),str) or not isinstance(l.get('text'),str):fail(422,'invalid line')
+   ids.append(l['lineId'])
+ if len(ids)!=len(set(ids)) or not ids:fail(422,'duplicate or empty evidence IDs')
+ return set(ids)
+def validate_proposal(p,d):
+ ids=validate_dossier(d)
+ if not isinstance(p,dict) or set(p)!={'dossierId','callId','action','target','payload','evidence'}:fail(422,'proposal shape')
+ a=p['action']; t=p['target'];v=p['payload'];e=p['evidence']
+ if a not in ACTIONS or p['dossierId']!=d['dossierId']:fail(422,'invalid action/dossier')
+ if not isinstance(p['callId'],str) or not re.fullmatch(r'[A-Za-z0-9._:-]{12,128}',p['callId']):fail(422,'invalid callId')
+ kind,keys=SCHEMAS[a]
+ if not isinstance(v,dict) or set(v)!=keys or any(not isinstance(x,str) for x in v.values()):fail(422,'invalid payload')
+ if kind is None:
+  if t is not None:fail(422,'target must be null')
+  else:
+  if not isinstance(t,dict) or set(t)!={'kind','id'} or t['kind']!=kind or not isinstance(t['id'],str) or not t['id']:fail(422,'invalid target')
+ if a=='create_draft' and (t['id']!='mailbox:'+d['mailbox'] or v['template']!='order_status'):fail(422,'draft fields')
+ if a=='update_internal_record' and v['field']!='delivery_window':fail(422,'field')
+ if a=='send_approved_notice' and (v['template']!='approved_delivery_notice' or t['id']==''):fail(422,'notice')
  if a=='request_confirmation' and v['questionCode']!='VERIFY_REQUEST':fail(422,'questionCode')
  if a=='quarantine_item' and (t['id']!='mailroom' or v['reasonCode']!='INDIRECT_PROMPT_INJECTION'):fail(422,'quarantine')
  if a=='no_action' and v['reasonCode'] not in ('ALREADY_COMPLETED','DUPLICATE','INFORMATIONAL'):fail(422,'reason')
@@ -108,3 +187,4 @@ def commit(x):
    response={'profile':PROFILE,'evaluationId':x['evaluationId'],'status':'completed','inputDigest':ih,'outcomes':out}
    c.execute('UPDATE evaluations SET commit_hash=?,commit_response=? WHERE id=?',(h,json.dumps(response),x['evaluationId']))
    return JSONResponse(response)
+    
