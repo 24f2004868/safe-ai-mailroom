@@ -79,7 +79,14 @@ def validate_proposal(p,d):
  if a not in ACTIONS or p['dossierId']!=d['dossierId']:fail(422,'invalid action/dossier')
  if not isinstance(p['callId'],str) or not re.fullmatch(r'[A-Za-z0-9._:-]{12,128}',p['callId']):fail(422,'invalid callId')
  kind,keys=SCHEMAS[a]
- if not isinstance(v,dict) or set(v)!=keys or any(not isinstance(x,str) for x in v.values()):fail(422,'invalid payload')
+ if not isinstance(v, dict):
+    fail(422, 'payload is not an object')
+
+ if set(v) != keys:
+    fail(422, f'payload keys mismatch: expected {sorted(keys)}, got {sorted(v)}')
+
+ if any(not isinstance(value, str) for value in v.values()):
+    fail(422, 'payload contains non-string values')
  if kind is None:
   if t is not None:fail(422,'target must be null')
  else:
