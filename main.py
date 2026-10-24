@@ -36,7 +36,13 @@ def fail(status,msg): raise HTTPException(status_code=status,detail=msg)
 def dbconnect():
  if DB.startswith('postgres'):
   import psycopg
-  return DatabaseConnection(psycopg.connect(DB.replace('postgres://','postgresql://',1)), True)
+  return DatabaseConnection(
+    psycopg.connect(
+        DB.replace('postgres://', 'postgresql://', 1),
+        connect_timeout=10
+    ),
+    True
+)
  return DatabaseConnection(sqlite3.connect(DB.removeprefix('sqlite:///'),timeout=30))
 @contextmanager
 def database():
