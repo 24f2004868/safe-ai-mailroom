@@ -67,7 +67,7 @@ def validate_dossier(d):
   for l in s['lines']:
    if not isinstance(l,dict) or not isinstance(l.get('lineId'),str) or not isinstance(l.get('text'),str):fail(422,'invalid line')
    ids.append(l['lineId'])
- if len(ids)!=len(set(ids)) or not ids:fail(422,'duplicate or empty evidence IDs')
+ if len(ids)!=len(set(ids)):fail(422,'duplicate evidence IDs')
  return set(ids)
 def validate_proposal(p,d):
  ids=validate_dossier(d)
