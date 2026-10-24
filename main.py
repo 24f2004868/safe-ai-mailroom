@@ -214,6 +214,7 @@ async def propose(x):
     try:
      validate_proposal(p,d)
     except HTTPException as ex:
+      print("INVALID PAYLOAD DETAILS:", repr(p.get('payload')), flush=True)
       print(
         "AI PROPOSAL VALIDATION FAILED:",
         "reason=", ex.detail,
