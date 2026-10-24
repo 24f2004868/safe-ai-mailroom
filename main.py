@@ -189,6 +189,8 @@ async def root(request:Request):
  if x.get('operation')=='propose':return await propose(x)
  if x.get('operation')=='commit':return commit(x)
  fail(400,'unknown operation')
+
+
 async def propose(x):
  ds=x.get('dossiers');allowed=x.get('allowedActions');corpus=x.get('corpus')
  if not isinstance(ds,list) or not ds or not isinstance(corpus,dict) or not isinstance(allowed,list) or set(allowed)!=ACTIONS or len(allowed)!=len(ACTIONS):fail(422,'invalid propose')
@@ -218,54 +220,41 @@ async def propose(x):
   results=await asyncio.gather(*(run_batch(batch) for batch in batches))
   for batch,decisions in zip(batches,results):
    for d in batch:
-    p=decisions[d['dossierId']]
-    p={k:p.get(k) for k in ('dossierId','action','target','payload','evidence')}
-    if p['action'] == 'create_draft':
-        p['target'] = {'kind': 'draft_queue', 'id': 'mailbox:' + d['mailbox']}
-        if isinstance(p['payload'], dict):
-            p['payload']['template'] = 'order_status'
-    
-    elif p['action'] == 'update_internal_record':
-        if isinstance(p['target'], dict):
-            p['target']['kind'] = 'case_record'
-        if isinstance(p['payload'], dict):
-            p['payload']['field'] = 'delivery_window'
-    
-    elif p['action'] == 'send_approved_notice':
-        if isinstance(p['target'], dict):
-            p['target']['kind'] = 'email'
-        if isinstance(p['payload'], dict):
-            p['payload']['template'] = 'approved_delivery_notice'
-    
-    elif p['action'] == 'request_confirmation':
-        if isinstance(p['target'], dict):
-            p['target']['kind'] = 'approval_queue'
-        if isinstance(p['payload'], dict):
-            p['payload']['questionCode'] = 'VERIFY_REQUEST'
-    
-    elif p['action'] == 'quarantine_item':
-        p['target'] = {'kind': 'security_queue', 'id': 'mailroom'}
-        if isinstance(p['payload'], dict):
-            p['payload']['reasonCode'] = 'INDIRECT_PROMPT_INJECTION'
-    
-    elif p['action'] == 'no_action':
-        p['target'] = None
-    p['callId']='call_'+hashlib.sha256((d['dossierId']+':'+digest(d)).encode()).hexdigest()[:40]
+    def normalize(raw):
+     p={k:raw.get(k) for k in ('dossierId','action','target','payload','evidence')}
+     a=p['action']
+     v=p['payload']
+     if a=='create_draft':
+      p['target']={'kind':'draft_queue','id':'mailbox:'+d['mailbox']}
+      if isinstance(v,dict):v['template']='order_status'
+     elif a=='update_internal_record':
+      if isinstance(p['target'],dict):p['target']['kind']='case_record'
+      if isinstance(v,dict):v['field']='delivery_window'
+     elif a=='send_approved_notice':
+      if isinstance(p['target'],dict):p['target']['kind']='email'
+      if isinstance(v,dict):v['template']='approved_delivery_notice'
+     elif a=='request_confirmation':
+      if isinstance(p['target'],dict):p['target']['kind']='approval_queue'
+      if isinstance(v,dict):v['questionCode']='VERIFY_REQUEST'
+     elif a=='quarantine_item':
+      p['target']={'kind':'security_queue','id':'mailroom'}
+      if isinstance(v,dict):v['reasonCode']='INDIRECT_PROMPT_INJECTION'
+     elif a=='no_action':
+      p['target']=None
+     p['callId']='call_'+hashlib.sha256((d['dossierId']+':'+digest(d)).encode()).hexdigest()[:40]
+     return p
+    p=normalize(decisions[d['dossierId']])
     try:
      validate_proposal(p,d)
     except HTTPException as ex:
-      
-      print(
-        "AI PROPOSAL VALIDATION FAILED:",
-        "reason=", ex.detail,
-        "action=", p.get('action'),
-        "dossierId=", d['dossierId'],
-        flush=True
-      )
-      raise HTTPException(
-        status_code=503,
-        detail="AI generated an invalid proposal"
-     )
+     print('RETRYING INVALID PROPOSAL:',d['dossierId'],ex.detail,flush=True)
+     try:
+      corrected=(await decide([d]))[d['dossierId']]
+      p=normalize(corrected)
+      validate_proposal(p,d)
+     except HTTPException as retry_error:
+      print('RETRY FAILED:',d['dossierId'],retry_error.detail,flush=True)
+      raise HTTPException(status_code=503,detail='AI generated an invalid proposal')
     cached[d['dossierId']]=p
   ps=[cached[d['dossierId']] for d in ds]
   if len({p['callId'] for p in ps})!=len(ps):fail(422,'callId collision')
@@ -306,4 +295,3 @@ def commit(x):
    response={'profile':PROFILE,'evaluationId':x['evaluationId'],'status':'completed','inputDigest':ih,'outcomes':out}
    c.execute('UPDATE evaluations SET commit_hash=?,commit_response=? WHERE id=?',(h,json.dumps(response),x['evaluationId']))
    return JSONResponse(response)
-    
