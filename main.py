@@ -278,7 +278,7 @@ async def propose(x):
  for d in ds:validate_dossier(d)
  verifier_key(x.get('receiptVerifier'))
  input_hash=digest(ds);request_hash=digest(x)
-  with lock:
+ with lock:
   with database() as c:
    old=c.execute('SELECT request_hash,propose_response FROM evaluations WHERE id=?',(x['evaluationId'],)).fetchone()
    if old:
