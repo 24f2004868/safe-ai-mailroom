@@ -180,6 +180,11 @@ async def propose(x):
    for d in batch:
     p=decisions[d['dossierId']]
     p={k:p.get(k) for k in ('dossierId','action','target','payload','evidence')}
+    if p['action'] == 'create_draft':
+    p['target'] = {
+        'kind': 'draft_queue',
+        'id': 'mailbox:' + d['mailbox']
+    }
     p['callId']='call_'+hashlib.sha256((d['dossierId']+':'+digest(d)).encode()).hexdigest()[:40]
     try:
      validate_proposal(p,d)
