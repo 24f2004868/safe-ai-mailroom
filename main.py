@@ -181,10 +181,35 @@ async def propose(x):
     p=decisions[d['dossierId']]
     p={k:p.get(k) for k in ('dossierId','action','target','payload','evidence')}
     if p['action'] == 'create_draft':
-     p['target'] = {
-         'kind': 'draft_queue',
-         'id': 'mailbox:' + d['mailbox']
-     }
+        p['target'] = {'kind': 'draft_queue', 'id': 'mailbox:' + d['mailbox']}
+        if isinstance(p['payload'], dict):
+            p['payload']['template'] = 'order_status'
+    
+    elif p['action'] == 'update_internal_record':
+        if isinstance(p['target'], dict):
+            p['target']['kind'] = 'case_record'
+        if isinstance(p['payload'], dict):
+            p['payload']['field'] = 'delivery_window'
+    
+    elif p['action'] == 'send_approved_notice':
+        if isinstance(p['target'], dict):
+            p['target']['kind'] = 'email'
+        if isinstance(p['payload'], dict):
+            p['payload']['template'] = 'approved_delivery_notice'
+    
+    elif p['action'] == 'request_confirmation':
+        if isinstance(p['target'], dict):
+            p['target']['kind'] = 'approval_queue'
+        if isinstance(p['payload'], dict):
+            p['payload']['questionCode'] = 'VERIFY_REQUEST'
+    
+    elif p['action'] == 'quarantine_item':
+        p['target'] = {'kind': 'security_queue', 'id': 'mailroom'}
+        if isinstance(p['payload'], dict):
+            p['payload']['reasonCode'] = 'INDIRECT_PROMPT_INJECTION'
+    
+    elif p['action'] == 'no_action':
+        p['target'] = None
     p['callId']='call_'+hashlib.sha256((d['dossierId']+':'+digest(d)).encode()).hexdigest()[:40]
     try:
      validate_proposal(p,d)
