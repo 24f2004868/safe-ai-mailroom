@@ -32,7 +32,10 @@ class DatabaseConnection:
 
 def canonical(x): return json.dumps(x,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode('utf-8')
 def digest(x): return hashlib.sha256(canonical(x)).hexdigest()
-def fail(status,msg): raise HTTPException(status_code=status,detail=msg)
+def fail(status, msg):
+    if status == 422:
+        print("VALIDATION ERROR:", msg, flush=True)
+    raise HTTPException(status_code=status, detail=msg)
 def dbconnect():
  if DB.startswith('postgres'):
   import psycopg
