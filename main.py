@@ -98,6 +98,8 @@ async def decide(batch):
  async with httpx.AsyncClient(timeout=38) as client:
   try:
    r=await client.post('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',headers={'Authorization':'Bearer '+key},json={'model':os.getenv('GEMINI_MODEL','gemini-2.5-flash'),'temperature':0,'response_format':{'type':'json_object'},'max_tokens':2048,'thinking_config':{'thinking_budget':0},'messages':[{'role':'system','content':SYSTEM+'\n'+specs},{'role':'user','content':json.dumps(batch,ensure_ascii=False)}]})
+   if r.status_code != 200:
+    print("GEMINI RESPONSE:", r.status_code, r.text[:1500], flush=True)
    r.raise_for_status();out=json.loads(r.json()['choices'][0]['message']['content'])['decisions']
   except Exception as ex:
     print("GEMINI ERROR:", type(ex).__name__, str(ex)[:500], flush=True)
