@@ -159,8 +159,21 @@ async def propose(x):
     p=decisions[d['dossierId']]
     p={k:p.get(k) for k in ('dossierId','action','target','payload','evidence')}
     p['callId']='call_'+hashlib.sha256((d['dossierId']+':'+digest(d)).encode()).hexdigest()[:40]
-    validate_proposal(p,d)
-    cached[d['dossierId']]=p
+    try:
+     validate_proposal(p,d)
+    except HTTPException as ex:
+      print(
+        "AI PROPOSAL VALIDATION FAILED:",
+        "reason=", ex.detail,
+        "action=", p.get('action'),
+        "dossierId=", d['dossierId'],
+        flush=True
+      )
+      raise HTTPException(
+        status_code=503,
+        detail="AI generated an invalid proposal"
+     )
+  cached[d['dossierId']]=p
   ps=[cached[d['dossierId']] for d in ds]
   if len({p['callId'] for p in ps})!=len(ps):fail(422,'callId collision')
   response={'profile':PROFILE,'evaluationId':x['evaluationId'],'status':'awaiting_receipts','inputDigest':input_hash,'proposals':ps}
