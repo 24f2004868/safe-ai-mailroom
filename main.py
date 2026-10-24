@@ -173,7 +173,7 @@ async def propose(x):
         status_code=503,
         detail="AI generated an invalid proposal"
      )
-  cached[d['dossierId']]=p
+    cached[d['dossierId']]=p
   ps=[cached[d['dossierId']] for d in ds]
   if len({p['callId'] for p in ps})!=len(ps):fail(422,'callId collision')
   response={'profile':PROFILE,'evaluationId':x['evaluationId'],'status':'awaiting_receipts','inputDigest':input_hash,'proposals':ps}
