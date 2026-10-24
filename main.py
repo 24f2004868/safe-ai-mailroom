@@ -73,7 +73,7 @@ def validate_proposal(p,d):
  if not isinstance(v,dict) or set(v)!=keys or any(not isinstance(x,str) for x in v.values()):fail(422,'invalid payload')
  if kind is None:
   if t is not None:fail(422,'target must be null')
-  else:
+ else:
   if not isinstance(t,dict) or set(t)!={'kind','id'} or t['kind']!=kind or not isinstance(t['id'],str) or not t['id']:fail(422,'invalid target')
  if a=='create_draft' and (t['id']!='mailbox:'+d['mailbox'] or v['template']!='order_status'):fail(422,'draft fields')
  if a=='update_internal_record' and v['field']!='delivery_window':fail(422,'field')
