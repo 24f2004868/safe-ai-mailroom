@@ -99,7 +99,9 @@ async def decide(batch):
   try:
    r=await client.post('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',headers={'Authorization':'Bearer '+key},json={'model':os.getenv('GEMINI_MODEL','gemini-2.5-flash'),'temperature':0,'response_format':{'type':'json_object'},'max_tokens':4096,'messages':[{'role':'system','content':SYSTEM+'\n'+specs},{'role':'user','content':json.dumps(batch,ensure_ascii=False)}]})
    r.raise_for_status();out=json.loads(r.json()['choices'][0]['message']['content'])['decisions']
-  except Exception as ex:fail(503,'AI decision unavailable: '+str(ex)[:120])
+  except Exception as ex:
+    print("GEMINI ERROR:", type(ex).__name__, str(ex)[:500], flush=True)
+    fail(503, "AI decision unavailable")
  if not isinstance(out,list) or len(out)!=len(batch) or {x.get('dossierId') for x in out}!={d['dossierId'] for d in batch}:fail(503,'AI returned invalid decision batch')
  return {x['dossierId']:x for x in out}
 def check_envelope(x):
