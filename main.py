@@ -502,6 +502,7 @@ async def propose(x):
                 if not ok:
                     replacement = safe_fallback(d, p)
                     if replacement is None:
+                        print("FAILED DOSSIER:", json.dumps(d, default=str), flush=True)
                         print('UNSAFE PROPOSAL BLOCKED:', d['dossierId'], reason, flush=True)
                         fail(503, 'Unsafe proposal could not be safely resolved')
                     validate_proposal(replacement, d)
