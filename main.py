@@ -136,27 +136,51 @@ def trusted_scope(d, p):
     return False
 
 def confirmation_arguments_supported(d, p):
-    """Require explicit role-labeled evidence for both confirmation arguments."""
     team = p['target']['id'].strip()
     sender = p['payload']['claimedSender'].strip()
-    if team.casefold() in {'owning team', 'approval team', 'unknown', 'responsible team', 'team'}:
+
+    invalid = {
+        'unknown', 'team', 'owning team',
+        'approval team', 'responsible team',
+        'sender', 'claimed sender'
+    }
+
+    if not team or not sender:
         return False
-    if sender.casefold() in {'unknown', 'sender', 'claimed sender', 'owning team'}:
+
+    if team.casefold() in invalid or sender.casefold() in invalid:
         return False
-    # A recipient in an approval is not necessarily the person who requested a change.
+
     team_supported = False
     sender_supported = False
+
     for source in d['sources']:
         for line in source.get('lines', []):
             txt = str(line.get('text', ''))
-            if not team_supported and source_trusted(source):
-                team_supported = bool(re.search(
-                    r'\b(?:owning|responsible|approval)\s+team\s*[:=]\s*' + re.escape(team) + r'(?=$|[\s,.;])',
-                    txt, re.I))
-            if not sender_supported:
-                sender_supported = bool(re.search(
-                    r'\b(?:claimed\s+sender|sender|from)\s*[:=]\s*' + re.escape(sender) + r'(?=$|[\s,.;])',
-                    txt, re.I))
+
+            team_patterns = [
+                r'\b(?:owning|responsible|approval)\s+team\s*[:=]\s*' + re.escape(team) + r'(?=$|[\s,.;])',
+                r'\b' + re.escape(team) + r'\s+team\s+(?:owns|handles|is responsible for)\b',
+                r'\b(?:owned|handled)\s+by\s+(?:the\s+)?' + re.escape(team) + r'\s+team\b'
+            ]
+
+            sender_patterns = [
+                r'\b(?:claimed\s+sender|sender|from)\s*[:=]\s*' + re.escape(sender) + r'(?=$|[\s,.;])',
+                r'\b(?:request|message|email)\s+(?:came|received)\s+from\s+' + re.escape(sender) + r'(?=$|[\s,.;])'
+            ]
+
+            if source_trusted(source) and any(
+                re.search(pattern, txt, re.I)
+                for pattern in team_patterns
+            ):
+                team_supported = True
+
+            if any(
+                re.search(pattern, txt, re.I)
+                for pattern in sender_patterns
+            ):
+                sender_supported = True
+
     return team_supported and sender_supported
 
 def safe_proposal(d, p):
