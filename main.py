@@ -316,6 +316,16 @@ async def decide(batch):
  Never invent missing identifiers or values.
  Only choose send_approved_notice with explicit trusted approval
  for the exact recipient, template, and public facts.
+
+ IMPORTANT REPAIR RULE:
+ If a dossier contains safetyFeedback, the previous proposal
+ was rejected by the safety validator.
+ You MUST reconsider the action using that feedback.
+ Do not repeat the rejected action with unsupported arguments.
+ Choose a different action only when the dossier evidence
+ supports all required fields.
+ Never invent an owning team, sender, recipient, approval,
+ completion event, or informational classification.
  """
  async with httpx.AsyncClient(timeout=90) as client:
   try:
@@ -480,11 +490,17 @@ async def propose(x):
                 for repair_attempt in range(2):
                     repair_input = dict(d)
                     repair_input['safetyFeedback'] = (
-                        'The prior action was rejected: ' + reason + '. '
-                        'Choose a different action only if all required arguments and evidence '
-                        'are explicitly supported. Do not invent an owning team, claimed sender, '
-                        'completion event, or informational classification.'
-                    )
+                    'Your previous proposal was rejected because: ' + reason + '. '
+                    'Re-evaluate the original dossier objective and all source lines. '
+                    'If requesting confirmation, use only an owning team and claimed sender '
+                    'explicitly documented in the evidence. '
+                    'If those details are missing, do not request confirmation. '
+                    'Consider another permitted action only when its required arguments '
+                    'and evidence are explicitly supported. '
+                    'Use no_action only when the evidence establishes ALREADY_COMPLETED, '
+                    'DUPLICATE, or INFORMATIONAL. '
+                    'Never invent facts, recipients, approvals, or completion events.'
+                     )
                     revised = (await decide([repair_input]))[d['dossierId']]
                     candidate = normalize(revised, d)
                     try:
